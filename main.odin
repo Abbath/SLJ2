@@ -25,6 +25,7 @@ Enemy :: struct {
   pos:     rl.Vector2,
   speed:   f32,
   hp:      i32,
+  init_hp: i32,
   is_boss: bool,
   alive:   bool,
 }
@@ -73,7 +74,7 @@ MovePlayer :: proc(p: ^Player) {
   }
 }
 DrawBullet :: proc(b: Bullet) {
-  rl.DrawCircleV(b.pos, 2, rl.WHITE)
+  rl.DrawCircleV(b.pos, f32(b.penetration), rl.WHITE)
 }
 MoveBullet :: proc(b: ^Bullet) {
   w := rl.GetScreenWidth()
@@ -85,9 +86,13 @@ MoveBullet :: proc(b: ^Bullet) {
 }
 DrawEnemy :: proc(e: Enemy) {
   hp := min(300, max(16, e.hp))
-  color := rl.ColorAlpha(rl.MAROON, 128)
+  color := rl.ColorAlpha(rl.MAROON, 0.5)
   rl.DrawRectangle(i32(e.pos.x) - hp - (e.is_boss ? i32(e.speed) : 0), i32(e.pos.y) - hp - (e.is_boss ? 0 : i32(e.speed) * 2), hp * 2, hp * 2, color)
   rl.DrawRectangle(i32(e.pos.x) - hp, i32(e.pos.y) - hp, hp * 2, hp * 2, e.is_boss ? rl.MAROON : rl.RED)
+  if e.is_boss {
+    true_hp := i32(2 * f32(hp) * (f32(e.hp) / f32(e.init_hp)))
+    rl.DrawRectangle(i32(e.pos.x) - hp, i32(e.pos.y) + hp - 5, true_hp, 5, rl.GREEN)
+  }
 }
 MoveEnemy :: proc(e: ^Enemy) {
   w := rl.GetScreenWidth()
@@ -97,6 +102,7 @@ MoveEnemy :: proc(e: ^Enemy) {
     if e.pos.x < 0 || i32(e.pos.x) > w {
       e.speed *= -1
       e.pos.x += 2 * e.speed
+      e.pos.y += 10
     }
   } else {
     e.pos.y += e.speed
@@ -106,7 +112,7 @@ MoveEnemy :: proc(e: ^Enemy) {
   }
 }
 DrawBonus :: proc(b: Bonus) {
-  rl.DrawPoly(b.pos, 6, 16, 0, b.typ == .SPEED ? rl.GREEN : (b.typ == .CANNON ? rl.GOLD : (b.typ == .DAMAGE ? rl.PINK : rl.PURPLE)))
+  rl.DrawPoly(b.pos, 6, 16, 0, b.typ == .SPEED ? rl.GREEN : (b.typ == .CANNON ? rl.GOLD : (b.typ == .DAMAGE ? rl.MAGENTA : rl.PURPLE)))
 }
 MoveBonus :: proc(b: ^Bonus) {
   w := rl.GetScreenWidth()
@@ -182,11 +188,12 @@ main :: proc() {
         if !boss_is_here && stage % 3 == 0 {
           boss_is_here = true
           enemy.speed = 5
-          enemy.hp = 100_000
+          enemy.hp = i32(stage - 3) * 100_000 + 100_000
+          enemy.init_hp = enemy.hp
           enemy.is_boss = true
           enemy.pos.y = 0
         } else {
-          enemy.speed = 4 + (2 - math.log10(f32(rl.GetRandomValue(1, 1000))))
+          enemy.speed = 3 + f32(stage) + (2 - math.log10(f32(rl.GetRandomValue(1, 1000))))
           enemy.hp = rl.GetRandomValue(10, 70) + i32(difficulty * stage)
           enemy.is_boss = false
           enemy.pos.y = f32(-enemy.hp)
@@ -400,6 +407,7 @@ main :: proc() {
                   if enemy.is_boss {
                     score += 500
                   }
+                  score += 1
                 }
               }
             }
