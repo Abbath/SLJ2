@@ -2,12 +2,14 @@ package main
 import "core:fmt"
 import "core:math"
 import "core:math/rand"
+import "core:slice"
 import rl "vendor:raylib"
 BULLETS :: 1000
 ENEMIES :: 1000
 BONUSES :: 1000
 BACKGROUNDS :: 1000
 FPS :: 60
+BACKGROUND_SIZE :: 400
 Player :: struct {
   pos:                rl.Vector2,
   speed:              f32,
@@ -74,7 +76,7 @@ MovePlayer :: proc(p: ^Player) {
   }
 }
 DrawBullet :: proc(b: Bullet) {
-  rl.DrawCircleV(b.pos, f32(b.penetration), rl.WHITE)
+  rl.DrawCircleV(b.pos, max(1, math.sqrt(f32(b.penetration))), rl.WHITE)
 }
 MoveBullet :: proc(b: ^Bullet) {
   w := rl.GetScreenWidth()
@@ -133,8 +135,26 @@ MoveBackground :: proc(b: ^Background) {
     b.alive = false
   }
 }
+generate_background :: proc(backgrounds: []Background, dead_background: ^int, initial: bool = false) {
+  small_back: i32 = BACKGROUND_SIZE / 10
+  background := &backgrounds[dead_background^]
+  background.alive = true
+  background.size = f32(rl.GetRandomValue(small_back, BACKGROUND_SIZE))
+  background.pos.x = f32(rl.GetRandomValue(0, rl.GetScreenWidth()))
+  background.pos.y = initial ? f32(rl.GetRandomValue(0, rl.GetScreenHeight())) : -backgrounds[dead_background^].size
+  background.color = int(64 + (background.size / BACKGROUND_SIZE * 128))
+  background.speed = 0.1 * background.size / f32(small_back)
+  for {
+    dead_background^ = (dead_background^ + 1) % BACKGROUNDS
+    if !backgrounds[dead_background^].alive {
+      break
+    }
+  }
+  slice.sort_by(backgrounds[:], proc(a, b: Background) -> bool {return a.size < b.size})
+}
 main :: proc() {
   rl.SetRandomSeed(rand.uint32())
+  rl.SetTextLineSpacing(21)
   win_w: i32 = 1000
   win_h: i32 = 1000
   rl.InitWindow(win_w, win_h, "SLJ")
@@ -157,9 +177,12 @@ main :: proc() {
   mute := true
   blink_player := 0
   score := 0
-  stage := 1
+  wave := 1
   rl.InitAudioDevice()
   psound := rl.LoadSound("p.ogg")
+  for _ in 0 ..< 10 {
+    generate_background(backgrounds[:], &dead_background, true)
+  }
   for !rl.WindowShouldClose() {
     if !game_over && !pause {
       if frame_counter % 6 == 0 {
@@ -180,28 +203,39 @@ main :: proc() {
         }
       }
       difficulty := frame_counter / 360
-      frequency := max(1, 30 - difficulty - stage)
+      frequency := 30 - difficulty - wave
+      iterations := 1
+      if frequency <= 0 {
+        iterations = max(-frequency, 1)
+        frequency = 1
+      }
       if frame_counter % frequency == 0 {
-        enemy := &enemies[dead_enemy]
-        enemy.alive = true
-        enemy.pos.x = f32(rl.GetRandomValue(0, rl.GetScreenWidth()))
-        if !boss_is_here && stage % 3 == 0 {
-          boss_is_here = true
-          enemy.speed = 5
-          enemy.hp = i32(stage - 3) * 100_000 + 100_000
-          enemy.init_hp = enemy.hp
-          enemy.is_boss = true
-          enemy.pos.y = 0
-        } else {
-          enemy.speed = 3 + f32(stage) + (2 - math.log10(f32(rl.GetRandomValue(1, 1000))))
-          enemy.hp = rl.GetRandomValue(10, 70) + i32(difficulty * stage)
-          enemy.is_boss = false
-          enemy.pos.y = f32(-enemy.hp)
-        }
-        for {
-          dead_enemy = (dead_enemy + 1) % ENEMIES
-          if !enemies[dead_enemy].alive {
-            break
+        outer: for i in 0 ..< iterations {
+          enemy := &enemies[dead_enemy]
+          enemy.alive = true
+          enemy.pos.x = f32(rl.GetRandomValue(0, rl.GetScreenWidth()))
+          if !boss_is_here && wave % 3 == 0 {
+            boss_is_here = true
+            enemy.speed = 5
+            enemy.hp = i32(wave - 3) * 100_000 + 100_000
+            enemy.init_hp = enemy.hp
+            enemy.is_boss = true
+            enemy.pos.y = 0
+          } else {
+            enemy.speed = 3 + f32(wave) + (2 - math.log10(f32(rl.GetRandomValue(1, 1000))))
+            enemy.hp = rl.GetRandomValue(10, 70) + i32(difficulty * wave)
+            enemy.is_boss = false
+            enemy.pos.y = f32(-enemy.hp)
+          }
+          old_dead_enemy := dead_enemy
+          for {
+            dead_enemy = (dead_enemy + 1) % ENEMIES
+            if !enemies[dead_enemy].alive {
+              break
+            }
+            if dead_enemy == old_dead_enemy {
+              break outer
+            }
           }
         }
       }
@@ -219,21 +253,7 @@ main :: proc() {
         }
       }
       if frame_counter % 120 == 0 {
-        for i in 0 ..< 2 {
-          background := &backgrounds[dead_background]
-          background.alive = true
-          background.size = f32(rl.GetRandomValue(60, 600))
-          background.pos.x = f32(rl.GetRandomValue(0, rl.GetScreenWidth()))
-          background.pos.y = -backgrounds[dead_background].size
-          background.color = int(128 + rl.GetRandomValue(-64, 64))
-          background.speed = i != 0 ? 1 : 0.5
-          for {
-            dead_background = (dead_background + 1) % BACKGROUNDS
-            if !backgrounds[dead_background].alive {
-              break
-            }
-          }
-        }
+        generate_background(backgrounds[:], &dead_background)
       }
       if frame_counter % 1200 == 0 {
         if !rocket.alive {
@@ -304,7 +324,23 @@ main :: proc() {
       w := rl.MeasureText("PAUSE", 72)
       rl.DrawText("PAUSE", (rl.GetScreenWidth() - w) / 2, rl.GetScreenHeight() / 2 - 36, 72, rl.RAYWHITE)
     }
-    rl.DrawText(fmt.ctprintf("Score: {:v}\nStage: {:v}\nSpeed: {:v}\nBullet damage: {:v}\nBullet penetration: {:v}\nCannons: {:v}\n", score, stage, p.speed, p.bullet_damage, p.bullet_penetration, p.cannons), 10, 10, 20, rl.RAYWHITE)
+    rl.DrawText(
+      fmt.ctprintf(
+        "Score: {:v}\nWave: {:v}\nStage: {:v}\nSpeed: {:v}\nBullet damage: {:v}\nBullet penetration: {:v}\nCannons: {:v}\nFirepower: {:v}/s\n",
+        score,
+        wave,
+        frame_counter / 360 + 1,
+        p.speed,
+        p.bullet_damage,
+        p.bullet_penetration,
+        p.cannons,
+        p.bullet_damage * p.bullet_penetration * p.cannons * 10,
+      ),
+      10,
+      10,
+      20,
+      rl.RAYWHITE,
+    )
     rl.EndDrawing()
     if rl.IsKeyPressed(.M) {
       mute = !mute
@@ -319,7 +355,7 @@ main :: proc() {
     }
     if game_over && rl.IsKeyPressed(.SPACE) {
       score = 0
-      stage = 1
+      wave = 1
       boss_is_here = false
       for &background in backgrounds {
         background.alive = false
@@ -418,7 +454,7 @@ main :: proc() {
     old_frame_counter := frame_counter
     frame_counter = (frame_counter + 1) % (FPS * 60)
     if !game_over && !pause && old_frame_counter > frame_counter {
-      stage += 1
+      wave += 1
       boss_is_here = false
     }
   }
