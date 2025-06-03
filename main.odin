@@ -96,7 +96,7 @@ DrawEnemy :: proc(e: Enemy) {
     rl.DrawRectangle(i32(e.pos.x) - hp, i32(e.pos.y) + hp - 5, true_hp, 5, rl.GREEN)
   }
 }
-MoveEnemy :: proc(e: ^Enemy) {
+MoveEnemy :: proc(e: ^Enemy, wave: f32) {
   w := rl.GetScreenWidth()
   h := rl.GetScreenHeight()
   if e.is_boss {
@@ -104,7 +104,7 @@ MoveEnemy :: proc(e: ^Enemy) {
     if e.pos.x < 0 || i32(e.pos.x) > w {
       e.speed *= -1
       e.pos.x += 2 * e.speed
-      e.pos.y += 10
+      e.pos.y += 7 + wave
     }
   } else {
     e.pos.y += e.speed
@@ -280,7 +280,7 @@ main :: proc() {
       }
       for &enemy in enemies {
         if enemy.alive {
-          MoveEnemy(&enemy)
+          MoveEnemy(&enemy, f32(wave))
         }
       }
       if !rocket.alive {
@@ -334,7 +334,7 @@ main :: proc() {
         p.bullet_damage,
         p.bullet_penetration,
         p.cannons,
-        p.bullet_damage * p.bullet_penetration * p.cannons * 10,
+        (p.bullet_damage * p.bullet_penetration - (p.bullet_penetration - 1) * p.bullet_penetration / 2) * p.cannons * 10,
       ),
       10,
       10,
