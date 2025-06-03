@@ -25,12 +25,13 @@ Bullet :: struct {
   alive:       bool,
 }
 Enemy :: struct {
-  pos:     rl.Vector2,
-  speed:   f32,
-  hp:      i32,
-  init_hp: i32,
-  is_boss: bool,
-  alive:   bool,
+  pos:         rl.Vector2,
+  vel:         rl.Vector2,
+  hp:          i32,
+  init_hp:     i32,
+  is_boss:     bool,
+  alive:       bool,
+  is_wanderer: bool,
 }
 BonusType :: enum {
   NONE,
@@ -91,7 +92,7 @@ MoveBullet :: proc(b: ^Bullet) {
 DrawEnemy :: proc(e: Enemy) {
   hp := min(300, max(16, e.hp))
   color := rl.ColorAlpha(rl.MAROON, 0.5)
-  rl.DrawRectangle(i32(e.pos.x) - hp - (e.is_boss ? i32(e.speed) : 0), i32(e.pos.y) - hp - (e.is_boss ? 0 : i32(e.speed) * 2), hp * 2, hp * 2, color)
+  rl.DrawRectangle(i32(e.pos.x) - hp - i32(e.vel.x), i32(e.pos.y) - hp - i32(e.vel.y) * 2, hp * 2, hp * 2, color)
   rl.DrawRectangle(i32(e.pos.x) - hp, i32(e.pos.y) - hp, hp * 2, hp * 2, e.is_boss ? rl.MAROON : rl.RED)
   if e.is_boss {
     true_hp := i32(2 * f32(hp) * (f32(e.hp) / f32(e.init_hp)))
@@ -101,15 +102,13 @@ DrawEnemy :: proc(e: Enemy) {
 MoveEnemy :: proc(e: ^Enemy, wave: f32) {
   w := rl.GetScreenWidth()
   h := rl.GetScreenHeight()
-  if e.is_boss {
-    e.pos.x += e.speed
-    if e.pos.x < 0 || i32(e.pos.x) > w {
-      e.speed *= -1
-      e.pos.x += 2 * e.speed
+  e.pos += e.vel
+  if e.pos.x < 0 || i32(e.pos.x) > w {
+    e.vel.x *= -1
+    e.pos.x += 2 * e.vel.x
+    if e.is_boss {
       e.pos.y += 7 + wave
     }
-  } else {
-    e.pos.y += e.speed
   }
   if e.pos.x < 0 || i32(e.pos.x) > w || i32(e.pos.y) > h + e.hp {
     e.alive = false
@@ -175,6 +174,7 @@ main :: proc() {
   win_w: i32 = 1000
   win_h: i32 = 1000
   rl.InitWindow(win_w, win_h, "SLJ")
+  rl.SetExitKey(.F10)
   rl.SetTargetFPS(FPS)
   p := Player{{f32(win_w) / 2, f32(win_h) - 40}, 5, 1, 10, 1, 0}
   bullets: [BULLETS]Bullet
@@ -197,6 +197,7 @@ main :: proc() {
   wave := 1
   rl.InitAudioDevice()
   psound := rl.LoadSound("p.ogg")
+  last_rocket_alive := false
   for _ in 0 ..< 10 {
     generate_background(backgrounds[:], &dead_background, true)
   }
@@ -233,13 +234,14 @@ main :: proc() {
           enemy.pos.x = f32(rl.GetRandomValue(0, rl.GetScreenWidth()))
           if !boss_is_here && wave % 3 == 0 {
             boss_is_here = true
-            enemy.speed = 5
+            enemy.vel = {5, 0}
             enemy.hp = i32(wave - 3) * 100_000 + 100_000
             enemy.init_hp = enemy.hp
             enemy.is_boss = true
             enemy.pos.y = 0
           } else {
-            enemy.speed = 3 + f32(wave) + (2 - math.log10(f32(rl.GetRandomValue(1, 1000))))
+            enemy.is_wanderer = rl.GetRandomValue(1, 100) == 1
+            enemy.vel = {enemy.is_wanderer ? f32(rl.GetRandomValue(-i32(wave), i32(wave))) : 0, 3 + f32(wave) + (2 - math.log10(f32(rl.GetRandomValue(1, 1000))))}
             enemy.hp = rl.GetRandomValue(10, 70) + i32(difficulty * wave)
             enemy.is_boss = false
             enemy.pos.y = f32(-enemy.hp)
@@ -307,7 +309,9 @@ main :: proc() {
     rl.BeginDrawing()
     rl.ClearBackground(rl.BLACK)
     for background in backgrounds {
-      DrawBackground(background)
+      if background.alive {
+        DrawBackground(background)
+      }
     }
     for enemy in enemies {
       if enemy.alive {
@@ -327,14 +331,17 @@ main :: proc() {
     if rocket.alive {
       rocket.pos += rocket.vel
     }
-    if !game_over && !pause && (frame_counter % FPS < 5 || frame_counter % FPS > (FPS - 5)) && p.lasers > 0 {
-      rl.DrawRectangleV({p.pos.x - f32(p.lasers), 0}, {f32(p.lasers * 2 + 1), p.pos.y}, rl.LIME)
+    if p.lasers > 0 {
+      laser_freq := max(10, FPS / p.lasers)
+      if !game_over && !pause && (frame_counter % laser_freq < 3 || frame_counter % laser_freq > (laser_freq - 3)) {
+        rl.DrawRectangleV({p.pos.x - 1, 0}, {3, p.pos.y}, rl.LIME)
+      }
     }
     DrawPlayer(p, bool(blink_player))
     blink_player = max(0, blink_player - 1)
     if rocket.alive {
       rl.DrawCircle(i32(rocket.pos.x - rocket.vel.x * (3 + 0.5 * f32(rl.GetRandomValue(1, 5)))), i32(rocket.pos.y - rocket.vel.y * (3 + 0.5 * f32(rl.GetRandomValue(1, 5)))), f32(rl.GetRandomValue(5, 15)), rl.ORANGE)
-      rl.DrawPoly(rocket.pos, 3, 16, rl.RAD2DEG * math.atan2(rocket.vel.x, rocket.vel.y) - 90, rl.ORANGE)
+      rl.DrawPoly(rocket.pos, 3, 16, rl.RAD2DEG * math.atan2(rocket.vel.x, rocket.vel.y), rl.ORANGE)
     }
     if game_over {
       w := rl.MeasureText("GAME OVER", 72)
@@ -362,6 +369,10 @@ main :: proc() {
       20,
       rl.RAYWHITE,
     )
+    if last_rocket_alive && !rocket.alive {
+      rl.DrawCircleV(rocket.pos, 100, rl.WHITE)
+    }
+    last_rocket_alive = rocket.alive
     rl.EndDrawing()
     if rl.IsKeyPressed(.M) {
       mute = !mute
@@ -395,6 +406,9 @@ main :: proc() {
       game_over = false
       pause = true
       frame_counter = 0
+      for _ in 0 ..< 10 {
+        generate_background(backgrounds[:], &dead_background, true)
+      }
     }
     if !game_over && !pause {
       min_d := max(f32)
@@ -445,15 +459,18 @@ main :: proc() {
           }
         }
       }
-      if (frame_counter % FPS < 5 || frame_counter % FPS > (FPS - 5)) && p.lasers > 0 {
-        for &enemy in enemies {
-          if enemy.alive {
-            hp := f32(min(300, max(16, enemy.hp)))
-            if rl.CheckCollisionRecs({enemy.pos.x - hp, enemy.pos.y - hp, hp * 2, hp * 2}, {p.pos.x - f32(p.lasers), 0, f32(p.lasers * 2 + 1), p.pos.y}) {
-              enemy.hp -= i32(p.bullet_damage * p.lasers * p.bullet_penetration)
-              if enemy.hp <= 0 {
-                enemy.alive = false
-                score += 1
+      if p.lasers > 0 {
+        laser_freq := max(10, FPS / p.lasers)
+        if (frame_counter % laser_freq < 3 || frame_counter % laser_freq > (laser_freq - 3)) {
+          for &enemy in enemies {
+            if enemy.alive {
+              hp := f32(min(300, max(16, enemy.hp)))
+              if rl.CheckCollisionRecs({enemy.pos.x - hp, enemy.pos.y - hp, hp * 2, hp * 2}, {p.pos.x - 1, 0, 3, p.pos.y}) {
+                enemy.hp -= i32((p.bullet_damage + max(0, p.lasers - 6)) * p.bullet_penetration)
+                if enemy.hp <= 0 {
+                  enemy.alive = false
+                  score += 1
+                }
               }
             }
           }
