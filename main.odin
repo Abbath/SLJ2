@@ -16,6 +16,7 @@ Player :: struct {
   cannons:            int,
   bullet_damage:      int,
   bullet_penetration: int,
+  lasers:             int,
 }
 Bullet :: struct {
   pos:         rl.Vector2,
@@ -37,6 +38,7 @@ BonusType :: enum {
   CANNON,
   DAMAGE,
   PENETRATION,
+  LASER,
 }
 Bonus :: struct {
   pos:   rl.Vector2,
@@ -114,7 +116,22 @@ MoveEnemy :: proc(e: ^Enemy, wave: f32) {
   }
 }
 DrawBonus :: proc(b: Bonus) {
-  rl.DrawPoly(b.pos, 6, 16, 0, b.typ == .SPEED ? rl.GREEN : (b.typ == .CANNON ? rl.GOLD : (b.typ == .DAMAGE ? rl.MAGENTA : rl.PURPLE)))
+  color := rl.WHITE
+  switch b.typ {
+  case .SPEED:
+    color = rl.GREEN
+  case .CANNON:
+    color = rl.GOLD
+  case .DAMAGE:
+    color = rl.MAGENTA
+  case .PENETRATION:
+    color = rl.PURPLE
+  case .LASER:
+    color = rl.BROWN
+  case .NONE:
+    break
+  }
+  rl.DrawPoly(b.pos, 6, 16, 0, color)
 }
 MoveBonus :: proc(b: ^Bonus) {
   w := rl.GetScreenWidth()
@@ -159,7 +176,7 @@ main :: proc() {
   win_h: i32 = 1000
   rl.InitWindow(win_w, win_h, "SLJ")
   rl.SetTargetFPS(FPS)
-  p := Player{{f32(win_w) / 2, f32(win_h) - 40}, 5, 1, 10, 1}
+  p := Player{{f32(win_w) / 2, f32(win_h) - 40}, 5, 1, 10, 1, 0}
   bullets: [BULLETS]Bullet
   enemies: [ENEMIES]Enemy
   bonuses: [BONUSES]Bonus
@@ -244,7 +261,7 @@ main :: proc() {
         bonus.alive = true
         bonus.speed = 4
         bonus.pos = {f32(rl.GetRandomValue(0, rl.GetScreenWidth())), 0}
-        bonus.typ = BonusType(rl.GetRandomValue(1, 4))
+        bonus.typ = BonusType(rl.GetRandomValue(1, 5))
         for {
           dead_bonus = (dead_bonus + 1) % BONUSES
           if !bonuses[dead_bonus].alive {
@@ -310,6 +327,9 @@ main :: proc() {
     if rocket.alive {
       rocket.pos += rocket.vel
     }
+    if !game_over && !pause && (frame_counter % FPS < 5 || frame_counter % FPS > (FPS - 5)) && p.lasers > 0 {
+      rl.DrawRectangleV({p.pos.x - f32(p.lasers), 0}, {f32(p.lasers * 2 + 1), p.pos.y}, rl.LIME)
+    }
     DrawPlayer(p, bool(blink_player))
     blink_player = max(0, blink_player - 1)
     if rocket.alive {
@@ -326,7 +346,7 @@ main :: proc() {
     }
     rl.DrawText(
       fmt.ctprintf(
-        "Score: {:v}\nWave: {:v}\nStage: {:v}\nSpeed: {:v}\nBullet damage: {:v}\nBullet penetration: {:v}\nCannons: {:v}\nFirepower: {:v}/s\n",
+        "Score: {:v}\nWave: {:v}\nStage: {:v}\nSpeed: {:v}\nBullet damage: {:v}\nBullet penetration: {:v}\nCannons: {:v}\nLasers: {:v}\nFirepower: {:v}/s\n",
         score,
         wave,
         frame_counter / 360 + 1,
@@ -334,7 +354,8 @@ main :: proc() {
         p.bullet_damage,
         p.bullet_penetration,
         p.cannons,
-        (p.bullet_damage * p.bullet_penetration - (p.bullet_penetration - 1) * p.bullet_penetration / 2) * p.cannons * 10,
+        p.lasers,
+        (p.bullet_damage * p.bullet_penetration - (p.bullet_penetration - 1) * p.bullet_penetration / 2) * p.cannons * 10 + (p.bullet_damage * p.bullet_penetration * p.lasers * 9),
       ),
       10,
       10,
@@ -369,7 +390,7 @@ main :: proc() {
       for &bonus in bonuses {
         bonus.alive = false
       }
-      p = Player{{f32(win_w / 2), f32(win_h - 40)}, 5, 1, 10, 1}
+      p = Player{{f32(win_w / 2), f32(win_h - 40)}, 5, 1, 10, 1, 0}
       rocket.alive = false
       game_over = false
       pause = true
@@ -414,11 +435,27 @@ main :: proc() {
               p.bullet_damage += 1
             case .PENETRATION:
               p.bullet_penetration += 1
+            case .LASER:
+              p.lasers += 1
             case .NONE:
               break
             }
             bonus.alive = false
             blink_player = 10
+          }
+        }
+      }
+      if (frame_counter % FPS < 5 || frame_counter % FPS > (FPS - 5)) && p.lasers > 0 {
+        for &enemy in enemies {
+          if enemy.alive {
+            hp := f32(min(300, max(16, enemy.hp)))
+            if rl.CheckCollisionRecs({enemy.pos.x - hp, enemy.pos.y - hp, hp * 2, hp * 2}, {p.pos.x - f32(p.lasers), 0, f32(p.lasers * 2 + 1), p.pos.y}) {
+              enemy.hp -= i32(p.bullet_damage * p.lasers * p.bullet_penetration)
+              if enemy.hp <= 0 {
+                enemy.alive = false
+                score += 1
+              }
+            }
           }
         }
       }
