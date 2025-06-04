@@ -171,7 +171,7 @@ generate_background :: proc(backgrounds: []Background, dead_background: ^int, in
 }
 main :: proc() {
   rl.SetRandomSeed(rand.uint32())
-  rl.SetTextLineSpacing(21)
+  rl.SetTextLineSpacing(2)
   win_w: i32 = 1000
   win_h: i32 = 1000
   rl.InitWindow(win_w, win_h, "SLJ")
@@ -237,7 +237,6 @@ main :: proc() {
             boss_is_here = true
             enemy.vel = {5, 0}
             enemy.hp = i32(wave - 3) * 100_000 + 100_000
-            enemy.init_hp = enemy.hp
             enemy.is_boss = true
             enemy.pos.y = 0
           } else {
@@ -247,6 +246,7 @@ main :: proc() {
             enemy.is_boss = false
             enemy.pos.y = f32(-enemy.hp)
           }
+          enemy.init_hp = enemy.hp
           old_dead_enemy := dead_enemy
           for {
             dead_enemy = (dead_enemy + 1) % ENEMIES
@@ -264,7 +264,7 @@ main :: proc() {
         bonus.alive = true
         bonus.speed = 4
         bonus.pos = {f32(rl.GetRandomValue(0, rl.GetScreenWidth())), 0}
-        bonus.typ = BonusType(rl.GetRandomValue(1, i32(len(reflect.enum_field_names(BonusType)))))
+        bonus.typ = BonusType(rl.GetRandomValue(1, i32(len(reflect.enum_field_names(BonusType))) - 1))
         for {
           dead_bonus = (dead_bonus + 1) % BONUSES
           if !bonuses[dead_bonus].alive {
@@ -470,7 +470,7 @@ main :: proc() {
                 enemy.hp -= i32((p.bullet_damage + max(0, p.lasers - 6)) * p.bullet_penetration)
                 if enemy.hp <= 0 {
                   enemy.alive = false
-                  score += 1
+                  score += int(enemy.init_hp) / 10
                 }
               }
             }
@@ -488,7 +488,6 @@ main :: proc() {
                 bullet.penetration -= 1
                 if bullet.penetration == 0 {
                   bullet.alive = false
-                  score += 1
                 }
                 if enemy.hp <= 0 {
                   enemy.alive = false
@@ -496,9 +495,10 @@ main :: proc() {
                     rl.PlaySound(psound)
                   }
                   if enemy.is_boss {
-                    score += 500
+                    score += 1000 * (wave / 3)
+                  } else {
+                    score += int(enemy.init_hp) / 10
                   }
-                  score += 1
                 }
               }
             }
