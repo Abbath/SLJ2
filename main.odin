@@ -2,6 +2,7 @@ package main
 import "core:fmt"
 import "core:math"
 import "core:math/rand"
+import "core:reflect"
 import "core:slice"
 import rl "vendor:raylib"
 BULLETS :: 1000
@@ -263,7 +264,7 @@ main :: proc() {
         bonus.alive = true
         bonus.speed = 4
         bonus.pos = {f32(rl.GetRandomValue(0, rl.GetScreenWidth())), 0}
-        bonus.typ = BonusType(rl.GetRandomValue(1, 5))
+        bonus.typ = BonusType(rl.GetRandomValue(1, i32(len(reflect.enum_field_names(BonusType)))))
         for {
           dead_bonus = (dead_bonus + 1) % BONUSES
           if !bonuses[dead_bonus].alive {
